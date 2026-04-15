@@ -1,10 +1,12 @@
 # Twitch Sync
 
-Watch a Twitch stream in your browser with adjustable delay, plus delayed chat — so you can sync it with another broadcast (e.g. a TV feed).
+Watch any Twitch stream in your browser, with adjustable stream and chat delay, to sync with another broadcast source (like TV).
 
-## Why
+- Lets you set and hold a fixed stream delay (Twitch’s player always drifts to live)
+- Add a separate chat delay to match your video
+- Runs Streamlink and a local Python proxy for browser playback; works in Firefox
 
-Streamlink grabs Twitch streams but outputs MPEG-TS, which browsers can't play natively. This project adds a thin proxy (`serve.py`) that remuxes to fragmented MP4 via ffmpeg, making it playable in a plain `<video>` tag. Chat connects over anonymous Twitch IRC — no API keys or login needed.
+Just what you need for easy manual sync with external feeds.
 
 ## Prerequisites
 
@@ -16,7 +18,7 @@ Streamlink grabs Twitch streams but outputs MPEG-TS, which browsers can't play n
 
 ```bash
 # 1. Start Streamlink (replace channel/quality as needed)
-streamlink --player-external-http --player-external-http-port 8888 twitch.tv/legendofwinning 720p
+streamlink --player-external-http --player-external-http-port 8888 twitch.tv/[channel] best
 
 # 2. Start the proxy (second terminal, from this directory)
 python3 serve.py
@@ -25,8 +27,12 @@ python3 serve.py
 open http://127.0.0.1:8765/twitch-sync.html
 ```
 
+Available stream qualities: audio_only, 160p (worst), 360p, 480p, 720p, 1080p (best). By default, "best" is used.
+
 In the app:
-- Click **Connect** to start the stream
-- Enter a channel name and click **Connect Chat**
-- Adjust **Stream delay** and **Chat delay** (0–120s) to sync with your other screen
-- **Sync both** sets chat delay = stream delay
+- Click **Connect** to start the stream.
+- Enter a channel name and click **Connect Chat**.
+- Adjust **Stream delay** and **Chat delay** (0–120s) to sync with your other screen.
+  - Note: When setting a stream delay, Streamlink must buffer at least as much video as your chosen delay time. For example, a 30s delay requires at least 30 seconds of stream to buffer before playback can start at that offset.
+  - Setting a chat delay will cause a corresponding pause before new chat messages appear (for example, with a 30s chat delay, incoming chat will be held for 30 seconds before showing).
+- **Sync both** sets chat delay equal to stream delay.

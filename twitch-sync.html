@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Twitch Sync</title>
-  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
   <style>
     :root {
       --bg: #0e0e10;
@@ -35,23 +34,25 @@
     .app {
       display: grid;
       grid-template-columns: 1fr minmax(280px, 30%);
-      grid-template-rows: 1fr auto;
+      grid-template-rows: 1fr;
       height: 100vh;
       min-height: 480px;
     }
     .video-pane {
       display: flex;
       flex-direction: column;
-      padding: 12px;
+      padding: 14px;
       gap: 10px;
       min-width: 0;
+      overflow-y: auto;
       border-right: 1px solid var(--border);
+      border-top: 2px solid var(--stream);
     }
     .video-wrap {
-      flex: 1;
-      min-height: 200px;
+      flex: 1 1 0;
+      min-height: 180px;
       background: #000;
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
       position: relative;
     }
@@ -68,15 +69,6 @@
       align-items: center;
     }
     .video-controls label { color: var(--muted); font-size: 13px; }
-    .video-controls input[type="url"] {
-      flex: 1;
-      min-width: 200px;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--text);
-    }
     .btn {
       padding: 8px 14px;
       border-radius: 6px;
@@ -84,7 +76,10 @@
       cursor: pointer;
       font-weight: 600;
       font-size: 14px;
+      transition: background 0.15s, transform 0.15s;
     }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
     .btn-stream { background: var(--stream); color: #fff; }
     .btn-stream:hover { background: var(--stream-dim); }
     .btn-chat { background: var(--chat); color: #fff; }
@@ -165,10 +160,13 @@
     .chat-pane {
       display: flex;
       flex-direction: column;
-      padding: 12px;
+      padding: 14px;
       gap: 8px;
       min-width: 0;
+      min-height: 0;
+      overflow: hidden;
       background: var(--surface);
+      border-top: 2px solid var(--chat);
     }
     .chat-header {
       display: flex;
@@ -186,7 +184,8 @@
       color: var(--text);
     }
     .chat-messages {
-      flex: 1;
+      flex: 1 1 0;
+      min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
       border: 1px solid var(--border);
@@ -194,7 +193,6 @@
       padding: 8px;
       background: var(--bg);
       font-size: 14px;
-      min-height: 120px;
     }
     .chat-messages .placeholder {
       color: var(--muted);
@@ -216,30 +214,6 @@
     .msg .name { font-weight: 600; margin-right: 6px; }
     .msg .text { color: var(--text); }
 
-    .bottom-bar {
-      grid-column: 1 / -1;
-      border-top: 1px solid var(--border);
-      padding: 10px 14px;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 16px 24px;
-      background: #0b0b0d;
-    }
-    .bottom-bar h2 {
-      margin: 0;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      width: 100%;
-    }
-    .bottom-controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px 32px;
-      align-items: center;
-    }
     .buffer-banner, .video-warn {
       font-size: 13px;
       padding: 6px 10px;
@@ -281,34 +255,20 @@
         <video id="streamVideo" controls playsinline></video>
       </div>
       <div class="video-controls">
-        <label for="streamUrl">Stream URL</label>
-        <input type="url" id="streamUrl" placeholder="http://127.0.0.1:8888" autocomplete="off" />
         <button type="button" class="btn btn-stream" id="btnStreamConnect">Connect</button>
+        <span class="dot" id="videoStatusDot" aria-hidden="true"></span>
+        <span id="videoStatusText" style="font-size:13px">No stream loaded</span>
+        <span class="delay-readout" id="videoDelayReadoutPane" style="margin-left:auto">+0s delay</span>
       </div>
-      <p class="help">
-        Run Streamlink locally, then connect. PiP:
-        <strong>hover the video</strong> — Firefox’s Picture-in-Picture button is bottom-right.
-      </p>
       <div class="help">
-        Streamlink command (uses the <strong>Channel</strong> field in chat):
         <code id="streamlinkCmd">streamlink --player-external-http --player-external-http-port 8888 twitch.tv/CHANNEL_NAME best</code>
       </div>
-      <p class="help">
-        Use the same URL Streamlink prints (e.g. <code style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">http://127.0.0.1:8888</code>).
-        If the terminal shows “Stream ended” right after connecting, the channel may be offline or Streamlink needs an update — try <code id="streamlinkCmdTest" style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">streamlink twitch.tv/CHANNEL_NAME best</code> without HTTP to test.
-      </p>
       <div id="videoError" class="video-error hidden" role="alert">
-        <p><strong>Stream not found.</strong> Make sure Streamlink is running.</p>
-        <p>Copy the command above, then click Reconnect.</p>
+        <p><strong>Stream not found.</strong> Make sure Streamlink + <code>python3 serve.py</code> are running.</p>
         <button type="button" class="btn btn-ghost" id="btnStreamReconnect">Reconnect</button>
       </div>
       <div id="bufferBanner" class="buffer-banner hidden">Waiting for enough buffer to apply stream delay…</div>
       <div id="videoBufferWarn" class="video-warn hidden"></div>
-      <div class="status-line" id="videoStatusLine">
-        <span class="dot" id="videoStatusDot" aria-hidden="true"></span>
-        <span id="videoStatusText">No stream loaded</span>
-        <span class="delay-readout" id="videoDelayReadoutPane">▶ +0s delay</span>
-      </div>
       <div class="slider-row stream">
         <label class="stream-accent" for="sliderStreamPane">Stream delay</label>
         <input type="range" id="sliderStreamPane" min="0" max="120" step="0.5" value="0" />
@@ -319,6 +279,7 @@
           <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="0.5" title="Stream +0.5s">+0.5s</button>
         </span>
       </div>
+      <p class="help" style="margin:0"><kbd>[</kbd> / <kbd>]</kbd> stream ±0.5s · <kbd>{</kbd> / <kbd>}</kbd> chat ±0.5s</p>
     </section>
 
     <section class="chat-pane" aria-label="Chat">
@@ -344,45 +305,25 @@
           <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="-0.5" title="Chat −0.5s">−0.5s</button>
           <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="0.5" title="Chat +0.5s">+0.5s</button>
         </span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnSyncBoth" title="Set chat delay = stream delay">Sync both</button>
       </div>
     </section>
 
-    <footer class="bottom-bar">
-      <h2>Quick delay</h2>
-      <div class="bottom-controls">
-        <div class="slider-row stream">
-          <label class="stream-accent" for="sliderStreamBottom">Stream delay</label>
-          <input type="range" id="sliderStreamBottom" min="0" max="120" step="0.5" value="0" />
-          <input type="number" class="delay-num" id="streamInputBottom" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Stream delay seconds (quick bar)" />
-          <span class="delay-readout" aria-hidden="true">s</span>
-        </div>
-        <div class="slider-row chat">
-          <label class="chat-accent" for="sliderChatBottom">Chat delay</label>
-          <input type="range" id="sliderChatBottom" min="0" max="120" step="0.5" value="0" />
-          <input type="number" class="delay-num" id="chatInputBottom" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Chat delay seconds (quick bar)" />
-          <span class="delay-readout" aria-hidden="true">s</span>
-        </div>
-        <button type="button" class="btn btn-stream" id="btnSyncBoth">Sync both</button>
-      </div>
-      <p class="help" style="margin:0;width:100%">
-        Sliders: 0.5s steps · type a value: 0.1s precision · <kbd>[</kbd> / <kbd>]</kbd> stream ±0.5s · <kbd>{</kbd> / <kbd>}</kbd> chat ±0.5s
-      </p>
-    </footer>
   </div>
 
   <script>
 (function () {
   'use strict';
 
+  var STREAM_URL = '/stream';
+
   var LS = {
     channel: 'twitchSync.channel',
-    streamUrl: 'twitchSync.streamUrl',
     streamDelay: 'twitchSync.streamDelay',
     chatDelay: 'twitchSync.chatDelay'
   };
 
   var video = document.getElementById('streamVideo');
-  var streamUrlInput = document.getElementById('streamUrl');
   var btnStreamConnect = document.getElementById('btnStreamConnect');
   var btnStreamReconnect = document.getElementById('btnStreamReconnect');
   var videoError = document.getElementById('videoError');
@@ -393,13 +334,10 @@
   var videoDelayReadoutPane = document.getElementById('videoDelayReadoutPane');
 
   var sliderStreamPane = document.getElementById('sliderStreamPane');
-  var sliderStreamBottom = document.getElementById('sliderStreamBottom');
   var streamInputPane = document.getElementById('streamInputPane');
-  var streamInputBottom = document.getElementById('streamInputBottom');
 
   var channelInput = document.getElementById('channelInput');
   var streamlinkCmdEl = document.getElementById('streamlinkCmd');
-  var streamlinkCmdTestEl = document.getElementById('streamlinkCmdTest');
   var btnChatConnect = document.getElementById('btnChatConnect');
   var chatStatusDot = document.getElementById('chatStatusDot');
   var chatStatusText = document.getElementById('chatStatusText');
@@ -407,9 +345,7 @@
   var chatMessages = document.getElementById('chatMessages');
   var chatPlaceholder = document.getElementById('chatPlaceholder');
   var sliderChatPane = document.getElementById('sliderChatPane');
-  var sliderChatBottom = document.getElementById('sliderChatBottom');
   var chatInputPane = document.getElementById('chatInputPane');
-  var chatInputBottom = document.getElementById('chatInputBottom');
   var btnSyncBoth = document.getElementById('btnSyncBoth');
 
   var state = {
@@ -418,8 +354,6 @@
     videoPhase: 'idle',
     chatPhase: 'disconnected',
     chatQueue: [],
-    chatUserScrolledUp: false,
-    mpegtsPlayer: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
     ws: null,
@@ -432,11 +366,9 @@
   function loadPrefs() {
     try {
       var ch = localStorage.getItem(LS.channel);
-      var url = localStorage.getItem(LS.streamUrl);
       var sd = localStorage.getItem(LS.streamDelay);
       var cd = localStorage.getItem(LS.chatDelay);
       if (ch) channelInput.value = ch;
-      if (url) streamUrlInput.value = url;
       if (sd !== null) {
         state.streamDelaySec = normalizeDelayTyped(sd);
       }
@@ -444,26 +376,15 @@
         state.chatDelaySec = normalizeDelayTyped(cd);
       }
     } catch (e) {}
-    if (!streamUrlInput.value.trim()) {
-      streamUrlInput.value = location.protocol.indexOf('http') === 0 ? '/stream' : 'http://127.0.0.1:8888';
-    }
     syncSlidersFromState();
     updateStreamlinkCommand();
   }
 
-  /** Returns twitch.tv/channel for Streamlink; uses CHANNEL_NAME placeholder when empty */
-  function getTwitchUrlPathForCmd() {
-    var ch = channelInput.value.trim().replace(/^#/, '').toLowerCase();
-    return ch ? 'twitch.tv/' + ch : 'twitch.tv/CHANNEL_NAME';
-  }
-
   function updateStreamlinkCommand() {
-    var path = getTwitchUrlPathForCmd();
+    var ch = channelInput.value.trim().replace(/^#/, '').toLowerCase();
+    var path = ch ? 'twitch.tv/' + ch : 'twitch.tv/CHANNEL_NAME';
     streamlinkCmdEl.textContent =
       'streamlink --player-external-http --player-external-http-port 8888 ' + path + ' best';
-    if (streamlinkCmdTestEl) {
-      streamlinkCmdTestEl.textContent = 'streamlink ' + path + ' best';
-    }
   }
 
   channelInput.addEventListener('input', updateStreamlinkCommand);
@@ -472,7 +393,6 @@
   function savePrefs() {
     try {
       localStorage.setItem(LS.channel, channelInput.value.trim());
-      localStorage.setItem(LS.streamUrl, streamUrlInput.value.trim());
       localStorage.setItem(LS.streamDelay, String(state.streamDelaySec));
       localStorage.setItem(LS.chatDelay, String(state.chatDelaySec));
     } catch (e) {}
@@ -518,24 +438,12 @@
   function syncSlidersFromState() {
     var sStream = state.streamDelaySec;
     var sChat = state.chatDelaySec;
-    var streamSliderVal = String(normalizeDelaySlider(sStream));
-    var chatSliderVal = String(normalizeDelaySlider(sChat));
-    [sliderStreamPane, sliderStreamBottom].forEach(function (el) {
-      el.value = streamSliderVal;
-    });
-    [sliderChatPane, sliderChatBottom].forEach(function (el) {
-      el.value = chatSliderVal;
-    });
-    var sv = delayToInputString(sStream);
-    var cv = delayToInputString(sChat);
-    [streamInputPane, streamInputBottom].forEach(function (el) {
-      el.value = sv;
-    });
-    [chatInputPane, chatInputBottom].forEach(function (el) {
-      el.value = cv;
-    });
-    videoDelayReadoutPane.textContent = '▶ +' + formatDelayReadout(sStream) + 's delay';
-    chatDelayReadoutPane.textContent = '💬 +' + formatDelayReadout(sChat) + 's delay';
+    sliderStreamPane.value = String(normalizeDelaySlider(sStream));
+    sliderChatPane.value = String(normalizeDelaySlider(sChat));
+    streamInputPane.value = delayToInputString(sStream);
+    chatInputPane.value = delayToInputString(sChat);
+    videoDelayReadoutPane.textContent = '+' + formatDelayReadout(sStream) + 's delay';
+    chatDelayReadoutPane.textContent = '+' + formatDelayReadout(sChat) + 's delay';
   }
 
   function setStreamDelay(sec, applySeek) {
@@ -639,51 +547,18 @@
     }
   }
 
-  function destroyMpegtsPlayer() {
-    if (state.mpegtsPlayer) {
-      try {
-        state.mpegtsPlayer.pause();
-        state.mpegtsPlayer.unload();
-        state.mpegtsPlayer.detachMediaElement();
-        state.mpegtsPlayer.destroy();
-      } catch (e) {}
-      state.mpegtsPlayer = null;
-    }
-  }
-
   function connectStream() {
-    var url = streamUrlInput.value.trim();
-    if (!url) return;
     videoError.classList.add('hidden');
     setVideoPhase('connecting');
-
-    destroyMpegtsPlayer();
     video.removeAttribute('src');
     video.load();
-    savePrefs();
-
-    if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
-      var player = mpegts.createPlayer({
-        type: 'mpegts',
-        isLive: true,
-        url: url
-      });
-      player.attachMediaElement(video);
-      player.load();
-      player.play();
-      player.on(mpegts.Events.ERROR, function () {
+    video.src = STREAM_URL;
+    var p = video.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(function () {
+        setVideoPhase('error');
         showStreamError();
       });
-      state.mpegtsPlayer = player;
-    } else {
-      video.src = url;
-      var p = video.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(function () {
-          setVideoPhase('error');
-          showStreamError();
-        });
-      }
     }
   }
 
@@ -759,14 +634,9 @@
   sliderStreamPane.addEventListener('input', function () {
     onStreamSliderInput(sliderStreamPane.value);
   });
-  sliderStreamBottom.addEventListener('input', function () {
-    onStreamSliderInput(sliderStreamBottom.value);
-  });
 
-  [streamInputPane, streamInputBottom].forEach(function (el) {
-    el.addEventListener('change', function () {
-      commitStreamDelayFromInput(el);
-    });
+  streamInputPane.addEventListener('change', function () {
+    commitStreamDelayFromInput(streamInputPane);
   });
 
   function onChatSliderInput(value) {
@@ -775,14 +645,9 @@
   sliderChatPane.addEventListener('input', function () {
     onChatSliderInput(sliderChatPane.value);
   });
-  sliderChatBottom.addEventListener('input', function () {
-    onChatSliderInput(sliderChatBottom.value);
-  });
 
-  [chatInputPane, chatInputBottom].forEach(function (el) {
-    el.addEventListener('change', function () {
-      setChatDelay(normalizeDelayTyped(el.value));
-    });
+  chatInputPane.addEventListener('change', function () {
+    setChatDelay(normalizeDelayTyped(chatInputPane.value));
   });
 
   btnSyncBoth.addEventListener('click', function () {
@@ -1073,22 +938,17 @@
     }
     state.chatQueue = remaining;
     if (frag.childNodes.length) {
+      var atBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
       chatMessages.appendChild(frag);
-      var kids = chatMessages.querySelectorAll('.msg');
-      while (kids.length > 200) {
-        chatMessages.removeChild(kids[0]);
+      var msgs = chatMessages.getElementsByClassName('msg');
+      while (msgs.length > 200) {
+        msgs[0].remove();
       }
-      if (!state.chatUserScrolledUp) {
+      if (atBottom) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
     }
   }
-
-  chatMessages.addEventListener('scroll', function () {
-    var el = chatMessages;
-    var nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    state.chatUserScrolledUp = !nearBottom;
-  });
 
   setInterval(renderChatTick, 250);
 

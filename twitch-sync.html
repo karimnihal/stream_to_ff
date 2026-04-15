@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Twitch Sync</title>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
   <style>
     :root {
       --bg: #0e0e10;
@@ -142,6 +143,23 @@
     .slider-row.stream input[type="range"] { accent-color: var(--stream); }
     .slider-row.chat input[type="range"] { accent-color: var(--chat); }
     .delay-readout { font-variant-numeric: tabular-nums; min-width: 7ch; }
+    input.delay-num {
+      width: 4.75rem;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+    input.delay-num:focus {
+      outline: 2px solid var(--stream);
+      outline-offset: 1px;
+    }
+    .slider-row.chat input.delay-num:focus {
+      outline-color: var(--chat);
+    }
     .nudge-group { display: inline-flex; gap: 4px; }
 
     .chat-pane {
@@ -272,12 +290,12 @@
         <strong>hover the video</strong> — Firefox’s Picture-in-Picture button is bottom-right.
       </p>
       <div class="help">
-        Command (replace <code style="display:inline;padding:0;border:none;background:none">CHANNEL_NAME</code>):
+        Streamlink command (uses the <strong>Channel</strong> field in chat):
         <code id="streamlinkCmd">streamlink --player-external-http --player-external-http-port 8888 twitch.tv/CHANNEL_NAME best</code>
       </div>
       <p class="help">
         Use the same URL Streamlink prints (e.g. <code style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">http://127.0.0.1:8888</code>).
-        If the terminal shows “Stream ended” right after connecting, the channel may be offline or Streamlink needs an update — try <code style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">streamlink twitch.tv/CHANNEL_NAME best</code> without HTTP to test.
+        If the terminal shows “Stream ended” right after connecting, the channel may be offline or Streamlink needs an update — try <code id="streamlinkCmdTest" style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">streamlink twitch.tv/CHANNEL_NAME best</code> without HTTP to test.
       </p>
       <div id="videoError" class="video-error hidden" role="alert">
         <p><strong>Stream not found.</strong> Make sure Streamlink is running.</p>
@@ -293,11 +311,12 @@
       </div>
       <div class="slider-row stream">
         <label class="stream-accent" for="sliderStreamPane">Stream delay</label>
-        <input type="range" id="sliderStreamPane" min="0" max="120" step="1" value="0" />
-        <span class="delay-readout" id="streamValuePane">0s</span>
+        <input type="range" id="sliderStreamPane" min="0" max="120" step="0.5" value="0" />
+        <input type="number" class="delay-num" id="streamInputPane" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Stream delay seconds" />
+        <span class="delay-readout" aria-hidden="true">s</span>
         <span class="nudge-group">
-          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="-1" title="Stream −1s">−1s</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="1" title="Stream +1s">+1s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="-0.5" title="Stream −0.5s">−0.5s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="0.5" title="Stream +0.5s">+0.5s</button>
         </span>
       </div>
     </section>
@@ -318,11 +337,12 @@
       </div>
       <div class="slider-row chat">
         <label class="chat-accent" for="sliderChatPane">Chat delay</label>
-        <input type="range" id="sliderChatPane" min="0" max="120" step="1" value="0" />
-        <span class="delay-readout" id="chatValuePane">0s</span>
+        <input type="range" id="sliderChatPane" min="0" max="120" step="0.5" value="0" />
+        <input type="number" class="delay-num" id="chatInputPane" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Chat delay seconds" />
+        <span class="delay-readout" aria-hidden="true">s</span>
         <span class="nudge-group">
-          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="-1" title="Chat −1s">−1s</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="1" title="Chat +1s">+1s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="-0.5" title="Chat −0.5s">−0.5s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="0.5" title="Chat +0.5s">+0.5s</button>
         </span>
       </div>
     </section>
@@ -332,18 +352,20 @@
       <div class="bottom-controls">
         <div class="slider-row stream">
           <label class="stream-accent" for="sliderStreamBottom">Stream delay</label>
-          <input type="range" id="sliderStreamBottom" min="0" max="120" step="1" value="0" />
-          <span class="delay-readout" id="streamValueBottom">0s</span>
+          <input type="range" id="sliderStreamBottom" min="0" max="120" step="0.5" value="0" />
+          <input type="number" class="delay-num" id="streamInputBottom" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Stream delay seconds (quick bar)" />
+          <span class="delay-readout" aria-hidden="true">s</span>
         </div>
         <div class="slider-row chat">
           <label class="chat-accent" for="sliderChatBottom">Chat delay</label>
-          <input type="range" id="sliderChatBottom" min="0" max="120" step="1" value="0" />
-          <span class="delay-readout" id="chatValueBottom">0s</span>
+          <input type="range" id="sliderChatBottom" min="0" max="120" step="0.5" value="0" />
+          <input type="number" class="delay-num" id="chatInputBottom" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Chat delay seconds (quick bar)" />
+          <span class="delay-readout" aria-hidden="true">s</span>
         </div>
         <button type="button" class="btn btn-stream" id="btnSyncBoth">Sync both</button>
       </div>
       <p class="help" style="margin:0;width:100%">
-        Shortcuts: <kbd>[</kbd> / <kbd>]</kbd> stream ±1s · <kbd>{</kbd> / <kbd>}</kbd> chat ±1s
+        Sliders: 0.5s steps · type a value: 0.1s precision · <kbd>[</kbd> / <kbd>]</kbd> stream ±0.5s · <kbd>{</kbd> / <kbd>}</kbd> chat ±0.5s
       </p>
     </footer>
   </div>
@@ -372,10 +394,12 @@
 
   var sliderStreamPane = document.getElementById('sliderStreamPane');
   var sliderStreamBottom = document.getElementById('sliderStreamBottom');
-  var streamValuePane = document.getElementById('streamValuePane');
-  var streamValueBottom = document.getElementById('streamValueBottom');
+  var streamInputPane = document.getElementById('streamInputPane');
+  var streamInputBottom = document.getElementById('streamInputBottom');
 
   var channelInput = document.getElementById('channelInput');
+  var streamlinkCmdEl = document.getElementById('streamlinkCmd');
+  var streamlinkCmdTestEl = document.getElementById('streamlinkCmdTest');
   var btnChatConnect = document.getElementById('btnChatConnect');
   var chatStatusDot = document.getElementById('chatStatusDot');
   var chatStatusText = document.getElementById('chatStatusText');
@@ -384,8 +408,8 @@
   var chatPlaceholder = document.getElementById('chatPlaceholder');
   var sliderChatPane = document.getElementById('sliderChatPane');
   var sliderChatBottom = document.getElementById('sliderChatBottom');
-  var chatValuePane = document.getElementById('chatValuePane');
-  var chatValueBottom = document.getElementById('chatValueBottom');
+  var chatInputPane = document.getElementById('chatInputPane');
+  var chatInputBottom = document.getElementById('chatInputBottom');
   var btnSyncBoth = document.getElementById('btnSyncBoth');
 
   var state = {
@@ -395,6 +419,7 @@
     chatPhase: 'disconnected',
     chatQueue: [],
     chatUserScrolledUp: false,
+    mpegtsPlayer: null,
     reconnectTimer: null,
     reconnectAttempt: 0,
     ws: null,
@@ -413,17 +438,36 @@
       if (ch) channelInput.value = ch;
       if (url) streamUrlInput.value = url;
       if (sd !== null) {
-        var s = clamp(parseInt(sd, 10) || 0, 0, 120);
-        state.streamDelaySec = s;
+        state.streamDelaySec = normalizeDelayTyped(sd);
       }
       if (cd !== null) {
-        var c = clamp(parseInt(cd, 10) || 0, 0, 120);
-        state.chatDelaySec = c;
+        state.chatDelaySec = normalizeDelayTyped(cd);
       }
     } catch (e) {}
-    if (!streamUrlInput.value.trim()) streamUrlInput.value = 'http://127.0.0.1:8888';
+    if (!streamUrlInput.value.trim()) {
+      streamUrlInput.value = location.protocol.indexOf('http') === 0 ? '/stream' : 'http://127.0.0.1:8888';
+    }
     syncSlidersFromState();
+    updateStreamlinkCommand();
   }
+
+  /** Returns twitch.tv/channel for Streamlink; uses CHANNEL_NAME placeholder when empty */
+  function getTwitchUrlPathForCmd() {
+    var ch = channelInput.value.trim().replace(/^#/, '').toLowerCase();
+    return ch ? 'twitch.tv/' + ch : 'twitch.tv/CHANNEL_NAME';
+  }
+
+  function updateStreamlinkCommand() {
+    var path = getTwitchUrlPathForCmd();
+    streamlinkCmdEl.textContent =
+      'streamlink --player-external-http --player-external-http-port 8888 ' + path + ' best';
+    if (streamlinkCmdTestEl) {
+      streamlinkCmdTestEl.textContent = 'streamlink ' + path + ' best';
+    }
+  }
+
+  channelInput.addEventListener('input', updateStreamlinkCommand);
+  channelInput.addEventListener('change', updateStreamlinkCommand);
 
   function savePrefs() {
     try {
@@ -438,30 +482,71 @@
     return Math.max(min, Math.min(max, n));
   }
 
+  /** Nearest 0.1 s within [0, 120] */
+  function roundToTenth(n) {
+    return Math.round(n * 10) / 10;
+  }
+
+  /** Nearest 0.5 s within [0, 120] (slider steps) */
+  function roundToHalf(n) {
+    return Math.round(n * 2) / 2;
+  }
+
+  function clampDelayRaw(n) {
+    var v = typeof n === 'number' && !isNaN(n) ? n : parseFloat(String(n).replace(',', '.'));
+    if (isNaN(v)) v = 0;
+    return clamp(v, 0, 120);
+  }
+
+  function normalizeDelayTyped(n) {
+    return roundToTenth(clampDelayRaw(n));
+  }
+
+  function normalizeDelaySlider(n) {
+    return roundToHalf(clampDelayRaw(n));
+  }
+
+  function formatDelayReadout(s) {
+    var r = normalizeDelayTyped(s);
+    return r % 1 === 0 ? String(r) : r.toFixed(1);
+  }
+
+  function delayToInputString(s) {
+    return formatDelayReadout(s);
+  }
+
   function syncSlidersFromState() {
+    var sStream = state.streamDelaySec;
+    var sChat = state.chatDelaySec;
+    var streamSliderVal = String(normalizeDelaySlider(sStream));
+    var chatSliderVal = String(normalizeDelaySlider(sChat));
     [sliderStreamPane, sliderStreamBottom].forEach(function (el) {
-      el.value = String(state.streamDelaySec);
+      el.value = streamSliderVal;
     });
     [sliderChatPane, sliderChatBottom].forEach(function (el) {
-      el.value = String(state.chatDelaySec);
+      el.value = chatSliderVal;
     });
-    streamValuePane.textContent = state.streamDelaySec + 's';
-    streamValueBottom.textContent = state.streamDelaySec + 's';
-    chatValuePane.textContent = state.chatDelaySec + 's';
-    chatValueBottom.textContent = state.chatDelaySec + 's';
-    videoDelayReadoutPane.textContent = '▶ +' + state.streamDelaySec + 's delay';
-    chatDelayReadoutPane.textContent = '💬 +' + state.chatDelaySec + 's delay';
+    var sv = delayToInputString(sStream);
+    var cv = delayToInputString(sChat);
+    [streamInputPane, streamInputBottom].forEach(function (el) {
+      el.value = sv;
+    });
+    [chatInputPane, chatInputBottom].forEach(function (el) {
+      el.value = cv;
+    });
+    videoDelayReadoutPane.textContent = '▶ +' + formatDelayReadout(sStream) + 's delay';
+    chatDelayReadoutPane.textContent = '💬 +' + formatDelayReadout(sChat) + 's delay';
   }
 
   function setStreamDelay(sec, applySeek) {
-    state.streamDelaySec = clamp(sec, 0, 120);
+    state.streamDelaySec = normalizeDelayTyped(sec);
     syncSlidersFromState();
     savePrefs();
     if (applySeek !== false) scheduleVideoDelayApply();
   }
 
   function setChatDelay(sec) {
-    state.chatDelaySec = clamp(sec, 0, 120);
+    state.chatDelaySec = normalizeDelayTyped(sec);
     syncSlidersFromState();
     savePrefs();
   }
@@ -492,7 +577,7 @@
   function tryApplyVideoDelay() {
     if (!state.pendingVideoDelayApply) return;
     var delay = state.streamDelaySec;
-    if (delay === 0) {
+    if (delay < 1e-9) {
       state.pendingVideoDelayApply = false;
       bufferBanner.classList.add('hidden');
       videoBufferWarn.classList.add('hidden');
@@ -508,9 +593,14 @@
 
     var need = delay;
     var avail = availableDelaySeconds(video);
-    if (avail < need - 0.5) {
+    if (avail + 1e-6 < need) {
       bufferBanner.classList.remove('hidden');
-      videoBufferWarn.textContent = 'Requested delay (' + need + 's) exceeds available buffer (~' + Math.floor(avail) + 's). Wait for more buffer or lower the delay.';
+      videoBufferWarn.textContent =
+        'Requested delay (' +
+        formatDelayReadout(need) +
+        's) exceeds available buffer (~' +
+        (avail % 1 < 0.05 ? String(Math.floor(avail + 1e-6)) : avail.toFixed(1)) +
+        's). Wait for more buffer or lower the delay.';
       videoBufferWarn.classList.remove('hidden');
       return;
     }
@@ -549,21 +639,51 @@
     }
   }
 
+  function destroyMpegtsPlayer() {
+    if (state.mpegtsPlayer) {
+      try {
+        state.mpegtsPlayer.pause();
+        state.mpegtsPlayer.unload();
+        state.mpegtsPlayer.detachMediaElement();
+        state.mpegtsPlayer.destroy();
+      } catch (e) {}
+      state.mpegtsPlayer = null;
+    }
+  }
+
   function connectStream() {
     var url = streamUrlInput.value.trim();
     if (!url) return;
     videoError.classList.add('hidden');
     setVideoPhase('connecting');
+
+    destroyMpegtsPlayer();
     video.removeAttribute('src');
     video.load();
-    video.src = url;
     savePrefs();
-    var p = video.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(function () {
-        setVideoPhase('error');
+
+    if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
+      var player = mpegts.createPlayer({
+        type: 'mpegts',
+        isLive: true,
+        url: url
+      });
+      player.attachMediaElement(video);
+      player.load();
+      player.play();
+      player.on(mpegts.Events.ERROR, function () {
         showStreamError();
       });
+      state.mpegtsPlayer = player;
+    } else {
+      video.src = url;
+      var p = video.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () {
+          setVideoPhase('error');
+          showStreamError();
+        });
+      }
     }
   }
 
@@ -597,12 +717,32 @@
   video.addEventListener('stalled', function () {});
 
   function onStreamSliderInput(value) {
-    var sec = clamp(parseInt(value, 10) || 0, 0, 120);
+    var sec = normalizeDelaySlider(value);
     var prev = state.streamDelaySec;
     state.streamDelaySec = sec;
     syncSlidersFromState();
     savePrefs();
-    if (sec > prev) {
+    if (sec > prev + 1e-9) {
+      var wasPlaying = !video.paused;
+      video.pause();
+      state.pendingVideoDelayApply = true;
+      tryApplyVideoDelay();
+      if (wasPlaying) {
+        var p = video.play();
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      }
+    } else {
+      scheduleVideoDelayApply();
+    }
+  }
+
+  function commitStreamDelayFromInput(el) {
+    var v = normalizeDelayTyped(el.value);
+    var prev = state.streamDelaySec;
+    state.streamDelaySec = v;
+    syncSlidersFromState();
+    savePrefs();
+    if (v > prev + 1e-9) {
       var wasPlaying = !video.paused;
       video.pause();
       state.pendingVideoDelayApply = true;
@@ -623,14 +763,26 @@
     onStreamSliderInput(sliderStreamBottom.value);
   });
 
+  [streamInputPane, streamInputBottom].forEach(function (el) {
+    el.addEventListener('change', function () {
+      commitStreamDelayFromInput(el);
+    });
+  });
+
   function onChatSliderInput(value) {
-    setChatDelay(parseInt(value, 10) || 0);
+    setChatDelay(normalizeDelaySlider(value));
   }
   sliderChatPane.addEventListener('input', function () {
     onChatSliderInput(sliderChatPane.value);
   });
   sliderChatBottom.addEventListener('input', function () {
     onChatSliderInput(sliderChatBottom.value);
+  });
+
+  [chatInputPane, chatInputBottom].forEach(function (el) {
+    el.addEventListener('change', function () {
+      setChatDelay(normalizeDelayTyped(el.value));
+    });
   });
 
   btnSyncBoth.addEventListener('click', function () {
@@ -640,7 +792,7 @@
   document.querySelectorAll('[data-nudge]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var kind = btn.getAttribute('data-nudge');
-      var delta = parseInt(btn.getAttribute('data-delta'), 10) || 0;
+      var delta = parseFloat(btn.getAttribute('data-delta')) || 0;
       if (kind === 'stream') {
         setStreamDelay(state.streamDelaySec + delta, true);
       } else if (kind === 'chat') {
@@ -653,16 +805,16 @@
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     if (e.key === '[') {
       e.preventDefault();
-      setStreamDelay(state.streamDelaySec - 1, true);
+      setStreamDelay(state.streamDelaySec - 0.5, true);
     } else if (e.key === ']') {
       e.preventDefault();
-      setStreamDelay(state.streamDelaySec + 1, true);
+      setStreamDelay(state.streamDelaySec + 0.5, true);
     } else if (e.key === '{') {
       e.preventDefault();
-      setChatDelay(state.chatDelaySec - 1);
+      setChatDelay(state.chatDelaySec - 0.5);
     } else if (e.key === '}') {
       e.preventDefault();
-      setChatDelay(state.chatDelaySec + 1);
+      setChatDelay(state.chatDelaySec + 0.5);
     }
   });
 

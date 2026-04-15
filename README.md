@@ -1,36 +1,42 @@
 # Twitch Sync
 
-A single-file local webapp ([`twitch-sync.html`](twitch-sync.html)) for watching a Twitch stream from Streamlink with **adjustable video delay**, plus **delayed Twitch chat**, so you can line the stream up with another broadcast (for example, a TV feed) and match chat timing separately.
+A local webapp for watching a Twitch stream from Streamlink with **adjustable video delay** + **delayed Twitch chat**, so you can sync the stream with another broadcast (e.g. a TV feed).
 
 ## Prerequisites
 
-- [Streamlink](https://streamlink.github.io/) installed and available in your shell
-- A modern desktop browser (Firefox is recommended for native Picture-in-Picture on the video)
+- [Streamlink](https://streamlink.github.io/) installed
+- Python 3 (for the CORS proxy)
+- A modern desktop browser (Firefox recommended for PiP)
 
 ## Quick start
 
-### 1. Start the local HTTP stream
-
-In a terminal, run Streamlink with external HTTP playback on port **8888**. Replace the channel with any live channel; this example uses [legendofwinning](https://www.twitch.tv/legendofwinning):
+### 1. Start Streamlink
 
 ```bash
 streamlink --player-external-http --player-external-http-port 8888 twitch.tv/legendofwinning best
 ```
 
-Leave this running. Streamlink prints the exact URLs; use the loopback one in the app (often `http://127.0.0.1:8888/` — a trailing slash is fine).
+### 2. Start the proxy server
 
-### 2. Open the app
+In a second terminal, from this directory:
 
-- **Double-click** `twitch-sync.html`, or open it via **File → Open** in your browser, **or**
-- Serve the folder with any static HTTP server and open the page (optional; either works).
+```bash
+python3 serve.py
+```
 
-### 3. Connect video and chat
+This serves the app and proxies the stream with CORS headers (required for browser playback of MPEG-TS).
 
-1. In **Stream URL**, set the same URL Streamlink showed (prefer `http://127.0.0.1:8888` if `localhost` misbehaves) and click **Connect**.
+### 3. Open the app
+
+Open **http://127.0.0.1:8765/twitch-sync.html** in your browser.
+
+### 4. Connect video and chat
+
+1. Stream URL defaults to `/stream` — just click **Connect**.
 2. In **Channel**, enter the chat channel name (for the example above: `legendofwinning`) and click **Connect Chat**.
-3. Use **Stream delay** and **Chat delay** (0–120 seconds) to match your other screen. **Sync both** sets chat delay to match stream delay in one click.
+3. Use **Stream delay** and **Chat delay** (0–120 seconds) to match your other screen. Sliders move in **0.5 s** steps; use the number fields next to each slider for **0.1 s** precision. **Sync both** sets chat delay to match stream delay in one click.
 
-### 4. Picture-in-Picture (Firefox)
+### 5. Picture-in-Picture (Firefox)
 
 Hover the video and use Firefox’s Picture-in-Picture control (typically bottom-right on the player) to float the stream over your other content.
 
@@ -39,46 +45,26 @@ Hover the video and use Firefox’s Picture-in-Picture control (typically bottom
 | File | Purpose |
 |------|---------|
 | `twitch-sync.html` | Full app (HTML, CSS, and JS in one file) |
+| `serve.py` | Local proxy — serves the app + proxies Streamlink stream with CORS headers |
 | `specs.md` | Original product specification |
 
 ## Notes
 
 - No Twitch login or API keys are required; chat uses anonymous IRC access as documented in the app.
 
-## If Streamlink says “Stream ended” right away
+## Troubleshooting
 
-Your log shows Streamlink **did** find the channel, **did** accept a request from Firefox, and **started** the `1080p` HLS stream — then the Twitch side or the HLS pipeline stopped. That usually is **not** a bug in `twitch-sync.html`.
+**”Stream ended” immediately after Connect:**
 
-Try these in order:
-
-1. **Confirm the channel is live** — open [legendofwinning](https://www.twitch.tv/legendofwinning) in a normal tab. If they are offline, hosting, or the stream died, Streamlink will end immediately.
-
-2. **Smoke-test Streamlink without the HTTP server** — if this fails too, fix Streamlink/Twitch before the web app:
+1. **Confirm the channel is live** — open the channel in a normal browser tab.
+2. **Make sure you're using `serve.py`** — opening `twitch-sync.html` via `file://` won't work because the browser blocks CORS requests to Streamlink's HTTP server. You must use `python3 serve.py` and open `http://127.0.0.1:8765/twitch-sync.html`.
+3. **Smoke-test Streamlink** without the HTTP server:
    ```bash
    streamlink twitch.tv/legendofwinning best
    ```
-   (Uses your default player; proves the plugin and stream work.)
-
-3. **Match the URL Streamlink prints** — use `http://127.0.0.1:8888` in the app if `http://localhost:8888` fails (some systems resolve `localhost` to IPv6 while Streamlink listens on IPv4, or the reverse).
-
-4. **Update Streamlink** — older Twitch plugin behavior can break after API changes:
-   ```bash
-   pip install -U streamlink
-   ```
-   (Or upgrade however you installed it — Homebrew, etc.)
-
-5. **Stale Twitch tokens** — if playback fails with integrity or API errors in the log, try purging the cached client-integrity token once, then retry:
+4. **Update Streamlink** — `pip install -U streamlink` or via Homebrew.
+5. **Try another quality** — e.g. `720p` instead of `best`.
+6. **Purge stale Twitch tokens**:
    ```bash
    streamlink --twitch-purge-client-integrity twitch.tv/legendofwinning best
    ```
-   (Then run your usual `--player-external-http` command again.)
-
-6. **Try another quality** — e.g. `720p` instead of `best`, to rule out a bad run for one rendition.
-
-7. **Open the app over HTTP** — if anything is odd with `file://` and media, serve this folder and open the page:
-   ```bash
-   python3 -m http.server 8765
-   ```
-   Then visit `http://127.0.0.1:8765/twitch-sync.html`.
-
-If the plain `streamlink twitch.tv/... best` test plays reliably but `--player-external-http` still ends instantly, check [Streamlink issues](https://github.com/streamlink/streamlink/issues) for Twitch + external HTTP (known edge cases include playlist reload failures and ad-related segment handling).

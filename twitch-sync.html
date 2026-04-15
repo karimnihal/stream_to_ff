@@ -8,6 +8,7 @@
     :root {
       --bg: #0e0e10;
       --surface: #18181b;
+      --surface-2: #1f1f23;
       --border: #2f2f35;
       --text: #efeff1;
       --muted: #adadb8;
@@ -19,6 +20,9 @@
       --err: #e91916;
       --ok: #00d26a;
       --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --radius: 10px;
+      --radius-sm: 8px;
+      --control-h: 34px;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -52,7 +56,7 @@
       flex: 1 1 0;
       min-height: 180px;
       background: #000;
-      border-radius: 10px;
+      border-radius: var(--radius);
       overflow: hidden;
       position: relative;
     }
@@ -63,15 +67,27 @@
       background: #000;
     }
     .video-controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
+      gap: 10px;
       align-items: center;
+    }
+    .video-status-text { font-size: 13px; color: var(--muted); }
+    .delay-chip {
+      justify-self: end;
+      font-variant-numeric: tabular-nums;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.05));
+      color: var(--text);
+      white-space: nowrap;
     }
     .video-controls label { color: var(--muted); font-size: 13px; }
     .btn {
-      padding: 8px 14px;
-      border-radius: 6px;
+      height: var(--control-h);
+      padding: 0 14px;
+      border-radius: var(--radius-sm);
       border: none;
       cursor: pointer;
       font-weight: 600;
@@ -85,12 +101,17 @@
     .btn-chat { background: var(--chat); color: #fff; }
     .btn-chat:hover { background: var(--chat-dim); }
     .btn-ghost {
-      background: var(--surface);
+      background: var(--surface-2);
       color: var(--text);
       border: 1px solid var(--border);
     }
     .btn-ghost:hover { border-color: var(--muted); }
-    .btn-sm { padding: 4px 10px; font-size: 13px; }
+    .btn-sm { height: 30px; padding: 0 10px; font-size: 13px; }
+    .btn:focus-visible {
+      outline: 2px solid var(--chat);
+      outline-offset: 2px;
+    }
+    .btn-stream:focus-visible { outline-color: var(--stream); }
     .help {
       font-size: 12px;
       color: var(--muted);
@@ -100,8 +121,8 @@
       display: block;
       margin-top: 6px;
       padding: 8px 10px;
-      background: var(--surface);
-      border-radius: 6px;
+      background: var(--surface-2);
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       font-size: 12px;
       word-break: break-all;
@@ -109,10 +130,10 @@
     }
     .status-line {
       font-size: 13px;
-      display: flex;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 10px;
     }
     .dot {
       width: 8px;
@@ -124,38 +145,109 @@
     .dot.ready { background: var(--ok); }
     .dot.error { background: var(--err); }
     .slider-row {
-      display: flex;
-      align-items: center;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto auto;
       gap: 10px;
-      flex-wrap: wrap;
+      align-items: center;
     }
     .slider-row label.stream-accent { color: var(--stream); font-weight: 600; }
     .slider-row label.chat-accent { color: var(--chat); font-weight: 600; }
     input[type="range"] {
-      width: min(220px, 100%);
+      width: 100%;
       accent-color: currentColor;
+      height: 22px;
     }
     .slider-row.stream input[type="range"] { accent-color: var(--stream); }
     .slider-row.chat input[type="range"] { accent-color: var(--chat); }
     .delay-readout { font-variant-numeric: tabular-nums; min-width: 7ch; }
     input.delay-num {
       width: 4.75rem;
-      padding: 4px 8px;
+      height: var(--control-h);
+      padding: 0 10px;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
       color: var(--text);
       font-size: 14px;
       font-variant-numeric: tabular-nums;
     }
-    input.delay-num:focus {
+    input.delay-num:focus-visible {
       outline: 2px solid var(--stream);
-      outline-offset: 1px;
+      outline-offset: 2px;
+    }
+    input.delay-num:focus {
+      outline: none;
     }
     .slider-row.chat input.delay-num:focus {
-      outline-color: var(--chat);
+      outline: none;
     }
-    .nudge-group { display: inline-flex; gap: 4px; }
+    .slider-row.chat input.delay-num:focus-visible { outline-color: var(--chat); }
+    .nudge-group { display: inline-flex; gap: 6px; }
+
+    /* Range styling (Twitch-like) */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.10);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: currentColor;
+      border: 2px solid rgba(0, 0, 0, 0.25);
+      margin-top: -5px;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    }
+    input[type="range"]:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 3px;
+      border-radius: 999px;
+    }
+    input[type="range"]::-moz-range-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.10);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: currentColor;
+      border: 2px solid rgba(0, 0, 0, 0.25);
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    }
+
+    @media (max-width: 980px) {
+      .slider-row {
+        grid-template-columns: auto 1fr auto auto;
+      }
+    }
+    @media (max-width: 560px) {
+      .slider-row {
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+          "label value"
+          "range range"
+          "nudges nudges";
+        row-gap: 8px;
+      }
+      .slider-row > label { grid-area: label; }
+      .slider-row > input[type="range"] { grid-area: range; }
+      .slider-row > input.delay-num { grid-area: value; justify-self: end; }
+      .slider-row > .delay-readout { display: none; }
+      .slider-row > .nudge-group { grid-area: nudges; }
+      .slider-row > button { grid-area: nudges; justify-self: end; }
+    }
 
     .chat-pane {
       display: flex;
@@ -177,11 +269,16 @@
     .chat-header input[type="text"] {
       flex: 1;
       min-width: 120px;
-      padding: 8px 10px;
+      height: var(--control-h);
+      padding: 0 10px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       background: var(--bg);
       color: var(--text);
+    }
+    .chat-header input[type="text"]:focus-visible {
+      outline: 2px solid var(--chat);
+      outline-offset: 2px;
     }
     .chat-messages {
       flex: 1 1 0;
@@ -189,7 +286,7 @@
       overflow-y: auto;
       overflow-x: hidden;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: 8px;
       background: var(--bg);
       font-size: 14px;
@@ -257,8 +354,8 @@
       <div class="video-controls">
         <button type="button" class="btn btn-stream" id="btnStreamConnect">Connect</button>
         <span class="dot" id="videoStatusDot" aria-hidden="true"></span>
-        <span id="videoStatusText" style="font-size:13px">No stream loaded</span>
-        <span class="delay-readout" id="videoDelayReadoutPane" style="margin-left:auto">+0s delay</span>
+        <span id="videoStatusText" class="video-status-text">No stream loaded</span>
+        <span class="delay-chip" id="videoDelayReadoutPane">+0s delay</span>
       </div>
       <div class="help">
         <code id="streamlinkCmd">streamlink --player-external-http --player-external-http-port 8888 twitch.tv/CHANNEL_NAME best</code>
@@ -272,7 +369,7 @@
       <div class="slider-row stream">
         <label class="stream-accent" for="sliderStreamPane">Stream delay</label>
         <input type="range" id="sliderStreamPane" min="0" max="120" step="0.5" value="0" />
-        <input type="number" class="delay-num" id="streamInputPane" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Stream delay seconds" />
+        <input type="number" class="delay-num" id="streamInputPane" min="0" max="120" step="0.5" value="0" inputmode="decimal" aria-label="Stream delay seconds" />
         <span class="delay-readout" aria-hidden="true">s</span>
         <span class="nudge-group">
           <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="-0.5" title="Stream −0.5s">−0.5s</button>
@@ -291,7 +388,7 @@
       <div class="status-line">
         <span class="dot" id="chatStatusDot" aria-hidden="true"></span>
         <span id="chatStatusText">Chat disconnected</span>
-        <span class="delay-readout" id="chatDelayReadoutPane">💬 +0s delay</span>
+        <span class="delay-chip" id="chatDelayReadoutPane">+0s delay</span>
       </div>
       <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions">
         <div class="placeholder" id="chatPlaceholder">Connect chat to see messages. Delay applies before display.</div>
@@ -299,7 +396,7 @@
       <div class="slider-row chat">
         <label class="chat-accent" for="sliderChatPane">Chat delay</label>
         <input type="range" id="sliderChatPane" min="0" max="120" step="0.5" value="0" />
-        <input type="number" class="delay-num" id="chatInputPane" min="0" max="120" step="0.1" value="0" inputmode="decimal" aria-label="Chat delay seconds" />
+        <input type="number" class="delay-num" id="chatInputPane" min="0" max="120" step="0.5" value="0" inputmode="decimal" aria-label="Chat delay seconds" />
         <span class="delay-readout" aria-hidden="true">s</span>
         <span class="nudge-group">
           <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="-0.5" title="Chat −0.5s">−0.5s</button>
@@ -402,11 +499,6 @@
     return Math.max(min, Math.min(max, n));
   }
 
-  /** Nearest 0.1 s within [0, 120] */
-  function roundToTenth(n) {
-    return Math.round(n * 10) / 10;
-  }
-
   /** Nearest 0.5 s within [0, 120] (slider steps) */
   function roundToHalf(n) {
     return Math.round(n * 2) / 2;
@@ -419,7 +511,7 @@
   }
 
   function normalizeDelayTyped(n) {
-    return roundToTenth(clampDelayRaw(n));
+    return roundToHalf(clampDelayRaw(n));
   }
 
   function normalizeDelaySlider(n) {

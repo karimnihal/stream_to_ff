@@ -46,7 +46,7 @@ Regular MP4 needs the `moov` atom at the end of the file, which doesn't work for
 ### Stream
 - `<video>` element loads `/stream` (the proxy endpoint)
 - Stream delay: pauses and seeks back from the live edge by N seconds
-- Delay controls: slider (0.5s steps), number input (0.1s precision), nudge buttons, keyboard shortcuts (`[` / `]`)
+- Delay controls: slider (0.5s steps), number input (0.5s steps), nudge buttons, keyboard shortcuts (`[` / `]`)
 
 ### Chat
 - Connects to Twitch IRC via anonymous WebSocket (`justinfanNNNNNNNN` nick, no auth needed)

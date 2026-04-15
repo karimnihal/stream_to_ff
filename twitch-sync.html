@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twitch Sync</title>
+  <style>
+    :root {
+      --bg: #0e0e10;
+      --surface: #18181b;
+      --border: #2f2f35;
+      --text: #efeff1;
+      --muted: #adadb8;
+      --stream: #1e88e5;
+      --stream-dim: #1565c0;
+      --chat: #9147ff;
+      --chat-dim: #772ce8;
+      --warn: #e59800;
+      --err: #e91916;
+      --ok: #00d26a;
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.45;
+      overflow: hidden;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 1fr minmax(280px, 30%);
+      grid-template-rows: 1fr auto;
+      height: 100vh;
+      min-height: 480px;
+    }
+    .video-pane {
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 10px;
+      min-width: 0;
+      border-right: 1px solid var(--border);
+    }
+    .video-wrap {
+      flex: 1;
+      min-height: 200px;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    .video-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .video-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .video-controls label { color: var(--muted); font-size: 13px; }
+    .video-controls input[type="url"] {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .btn-stream { background: var(--stream); color: #fff; }
+    .btn-stream:hover { background: var(--stream-dim); }
+    .btn-chat { background: var(--chat); color: #fff; }
+    .btn-chat:hover { background: var(--chat-dim); }
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--muted); }
+    .btn-sm { padding: 4px 10px; font-size: 13px; }
+    .help {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 720px;
+    }
+    .help code {
+      display: block;
+      margin-top: 6px;
+      padding: 8px 10px;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      word-break: break-all;
+      user-select: all;
+    }
+    .status-line {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.connecting { background: var(--warn); }
+    .dot.ready { background: var(--ok); }
+    .dot.error { background: var(--err); }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .slider-row label.stream-accent { color: var(--stream); font-weight: 600; }
+    .slider-row label.chat-accent { color: var(--chat); font-weight: 600; }
+    input[type="range"] {
+      width: min(220px, 100%);
+      accent-color: currentColor;
+    }
+    .slider-row.stream input[type="range"] { accent-color: var(--stream); }
+    .slider-row.chat input[type="range"] { accent-color: var(--chat); }
+    .delay-readout { font-variant-numeric: tabular-nums; min-width: 7ch; }
+    .nudge-group { display: inline-flex; gap: 4px; }
+
+    .chat-pane {
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 8px;
+      min-width: 0;
+      background: var(--surface);
+    }
+    .chat-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .chat-header input[type="text"] {
+      flex: 1;
+      min-width: 120px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: var(--bg);
+      font-size: 14px;
+      min-height: 120px;
+    }
+    .chat-messages .placeholder {
+      color: var(--muted);
+      font-style: italic;
+    }
+    .msg {
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+    .msg .badges { display: inline-flex; gap: 3px; margin-right: 4px; vertical-align: middle; }
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .badge-dot.sub { background: #ffd700; }
+    .badge-dot.mod { background: #00d26a; }
+    .msg .name { font-weight: 600; margin-right: 6px; }
+    .msg .text { color: var(--text); }
+
+    .bottom-bar {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px 24px;
+      background: #0b0b0d;
+    }
+    .bottom-bar h2 {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      width: 100%;
+    }
+    .bottom-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px 32px;
+      align-items: center;
+    }
+    .buffer-banner, .video-warn {
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      width: 100%;
+    }
+    .buffer-banner {
+      background: rgba(30, 136, 229, 0.15);
+      border: 1px solid var(--stream);
+      color: var(--text);
+    }
+    .video-warn {
+      background: rgba(229, 152, 0, 0.15);
+      border: 1px solid var(--warn);
+      color: #ffd88a;
+    }
+    .video-error {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--err);
+      background: rgba(233, 25, 22, 0.12);
+    }
+    .video-error p { margin: 0 0 8px; }
+    .hidden { display: none !important; }
+    kbd {
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="video-pane" aria-label="Stream">
+      <div class="video-wrap">
+        <video id="streamVideo" controls playsinline></video>
+      </div>
+      <div class="video-controls">
+        <label for="streamUrl">Stream URL</label>
+        <input type="url" id="streamUrl" placeholder="http://127.0.0.1:8888" autocomplete="off" />
+        <button type="button" class="btn btn-stream" id="btnStreamConnect">Connect</button>
+      </div>
+      <p class="help">
+        Run Streamlink locally, then connect. PiP:
+        <strong>hover the video</strong> — Firefox’s Picture-in-Picture button is bottom-right.
+      </p>
+      <div class="help">
+        Command (replace <code style="display:inline;padding:0;border:none;background:none">CHANNEL_NAME</code>):
+        <code id="streamlinkCmd">streamlink --player-external-http --player-external-http-port 8888 twitch.tv/CHANNEL_NAME best</code>
+      </div>
+      <p class="help">
+        Use the same URL Streamlink prints (e.g. <code style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">http://127.0.0.1:8888</code>).
+        If the terminal shows “Stream ended” right after connecting, the channel may be offline or Streamlink needs an update — try <code style="display:inline;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface)">streamlink twitch.tv/CHANNEL_NAME best</code> without HTTP to test.
+      </p>
+      <div id="videoError" class="video-error hidden" role="alert">
+        <p><strong>Stream not found.</strong> Make sure Streamlink is running.</p>
+        <p>Copy the command above, then click Reconnect.</p>
+        <button type="button" class="btn btn-ghost" id="btnStreamReconnect">Reconnect</button>
+      </div>
+      <div id="bufferBanner" class="buffer-banner hidden">Waiting for enough buffer to apply stream delay…</div>
+      <div id="videoBufferWarn" class="video-warn hidden"></div>
+      <div class="status-line" id="videoStatusLine">
+        <span class="dot" id="videoStatusDot" aria-hidden="true"></span>
+        <span id="videoStatusText">No stream loaded</span>
+        <span class="delay-readout" id="videoDelayReadoutPane">▶ +0s delay</span>
+      </div>
+      <div class="slider-row stream">
+        <label class="stream-accent" for="sliderStreamPane">Stream delay</label>
+        <input type="range" id="sliderStreamPane" min="0" max="120" step="1" value="0" />
+        <span class="delay-readout" id="streamValuePane">0s</span>
+        <span class="nudge-group">
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="-1" title="Stream −1s">−1s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="stream" data-delta="1" title="Stream +1s">+1s</button>
+        </span>
+      </div>
+    </section>
+
+    <section class="chat-pane" aria-label="Chat">
+      <div class="chat-header">
+        <label for="channelInput" class="chat-accent">Channel</label>
+        <input type="text" id="channelInput" placeholder="channel name (no #)" autocomplete="off" spellcheck="false" />
+        <button type="button" class="btn btn-chat" id="btnChatConnect">Connect Chat</button>
+      </div>
+      <div class="status-line">
+        <span class="dot" id="chatStatusDot" aria-hidden="true"></span>
+        <span id="chatStatusText">Chat disconnected</span>
+        <span class="delay-readout" id="chatDelayReadoutPane">💬 +0s delay</span>
+      </div>
+      <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions">
+        <div class="placeholder" id="chatPlaceholder">Connect chat to see messages. Delay applies before display.</div>
+      </div>
+      <div class="slider-row chat">
+        <label class="chat-accent" for="sliderChatPane">Chat delay</label>
+        <input type="range" id="sliderChatPane" min="0" max="120" step="1" value="0" />
+        <span class="delay-readout" id="chatValuePane">0s</span>
+        <span class="nudge-group">
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="-1" title="Chat −1s">−1s</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nudge="chat" data-delta="1" title="Chat +1s">+1s</button>
+        </span>
+      </div>
+    </section>
+
+    <footer class="bottom-bar">
+      <h2>Quick delay</h2>
+      <div class="bottom-controls">
+        <div class="slider-row stream">
+          <label class="stream-accent" for="sliderStreamBottom">Stream delay</label>
+          <input type="range" id="sliderStreamBottom" min="0" max="120" step="1" value="0" />
+          <span class="delay-readout" id="streamValueBottom">0s</span>
+        </div>
+        <div class="slider-row chat">
+          <label class="chat-accent" for="sliderChatBottom">Chat delay</label>
+          <input type="range" id="sliderChatBottom" min="0" max="120" step="1" value="0" />
+          <span class="delay-readout" id="chatValueBottom">0s</span>
+        </div>
+        <button type="button" class="btn btn-stream" id="btnSyncBoth">Sync both</button>
+      </div>
+      <p class="help" style="margin:0;width:100%">
+        Shortcuts: <kbd>[</kbd> / <kbd>]</kbd> stream ±1s · <kbd>{</kbd> / <kbd>}</kbd> chat ±1s
+      </p>
+    </footer>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  var LS = {
+    channel: 'twitchSync.channel',
+    streamUrl: 'twitchSync.streamUrl',
+    streamDelay: 'twitchSync.streamDelay',
+    chatDelay: 'twitchSync.chatDelay'
+  };
+
+  var video = document.getElementById('streamVideo');
+  var streamUrlInput = document.getElementById('streamUrl');
+  var btnStreamConnect = document.getElementById('btnStreamConnect');
+  var btnStreamReconnect = document.getElementById('btnStreamReconnect');
+  var videoError = document.getElementById('videoError');
+  var bufferBanner = document.getElementById('bufferBanner');
+  var videoBufferWarn = document.getElementById('videoBufferWarn');
+  var videoStatusDot = document.getElementById('videoStatusDot');
+  var videoStatusText = document.getElementById('videoStatusText');
+  var videoDelayReadoutPane = document.getElementById('videoDelayReadoutPane');
+
+  var sliderStreamPane = document.getElementById('sliderStreamPane');
+  var sliderStreamBottom = document.getElementById('sliderStreamBottom');
+  var streamValuePane = document.getElementById('streamValuePane');
+  var streamValueBottom = document.getElementById('streamValueBottom');
+
+  var channelInput = document.getElementById('channelInput');
+  var btnChatConnect = document.getElementById('btnChatConnect');
+  var chatStatusDot = document.getElementById('chatStatusDot');
+  var chatStatusText = document.getElementById('chatStatusText');
+  var chatDelayReadoutPane = document.getElementById('chatDelayReadoutPane');
+  var chatMessages = document.getElementById('chatMessages');
+  var chatPlaceholder = document.getElementById('chatPlaceholder');
+  var sliderChatPane = document.getElementById('sliderChatPane');
+  var sliderChatBottom = document.getElementById('sliderChatBottom');
+  var chatValuePane = document.getElementById('chatValuePane');
+  var chatValueBottom = document.getElementById('chatValueBottom');
+  var btnSyncBoth = document.getElementById('btnSyncBoth');
+
+  var state = {
+    streamDelaySec: 0,
+    chatDelaySec: 0,
+    videoPhase: 'idle',
+    chatPhase: 'disconnected',
+    chatQueue: [],
+    chatUserScrolledUp: false,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    ws: null,
+    chatChannel: '',
+    wantChat: false,
+    pendingVideoDelayApply: false,
+    wasPlayingBeforeSeek: false
+  };
+
+  function loadPrefs() {
+    try {
+      var ch = localStorage.getItem(LS.channel);
+      var url = localStorage.getItem(LS.streamUrl);
+      var sd = localStorage.getItem(LS.streamDelay);
+      var cd = localStorage.getItem(LS.chatDelay);
+      if (ch) channelInput.value = ch;
+      if (url) streamUrlInput.value = url;
+      if (sd !== null) {
+        var s = clamp(parseInt(sd, 10) || 0, 0, 120);
+        state.streamDelaySec = s;
+      }
+      if (cd !== null) {
+        var c = clamp(parseInt(cd, 10) || 0, 0, 120);
+        state.chatDelaySec = c;
+      }
+    } catch (e) {}
+    if (!streamUrlInput.value.trim()) streamUrlInput.value = 'http://127.0.0.1:8888';
+    syncSlidersFromState();
+  }
+
+  function savePrefs() {
+    try {
+      localStorage.setItem(LS.channel, channelInput.value.trim());
+      localStorage.setItem(LS.streamUrl, streamUrlInput.value.trim());
+      localStorage.setItem(LS.streamDelay, String(state.streamDelaySec));
+      localStorage.setItem(LS.chatDelay, String(state.chatDelaySec));
+    } catch (e) {}
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function syncSlidersFromState() {
+    [sliderStreamPane, sliderStreamBottom].forEach(function (el) {
+      el.value = String(state.streamDelaySec);
+    });
+    [sliderChatPane, sliderChatBottom].forEach(function (el) {
+      el.value = String(state.chatDelaySec);
+    });
+    streamValuePane.textContent = state.streamDelaySec + 's';
+    streamValueBottom.textContent = state.streamDelaySec + 's';
+    chatValuePane.textContent = state.chatDelaySec + 's';
+    chatValueBottom.textContent = state.chatDelaySec + 's';
+    videoDelayReadoutPane.textContent = '▶ +' + state.streamDelaySec + 's delay';
+    chatDelayReadoutPane.textContent = '💬 +' + state.chatDelaySec + 's delay';
+  }
+
+  function setStreamDelay(sec, applySeek) {
+    state.streamDelaySec = clamp(sec, 0, 120);
+    syncSlidersFromState();
+    savePrefs();
+    if (applySeek !== false) scheduleVideoDelayApply();
+  }
+
+  function setChatDelay(sec) {
+    state.chatDelaySec = clamp(sec, 0, 120);
+    syncSlidersFromState();
+    savePrefs();
+  }
+
+  function getBufferedEnd(v) {
+    if (!v.buffered || !v.buffered.length) return null;
+    return v.buffered.end(v.buffered.length - 1);
+  }
+
+  function getBufferedStart(v) {
+    if (!v.buffered || !v.buffered.length) return null;
+    return v.buffered.start(0);
+  }
+
+  /** Max seconds of media behind the live edge we can seek to (approx). */
+  function availableDelaySeconds(v) {
+    var end = getBufferedEnd(v);
+    var start = getBufferedStart(v);
+    if (end == null || start == null) return 0;
+    return Math.max(0, end - start - 0.25);
+  }
+
+  function scheduleVideoDelayApply() {
+    state.pendingVideoDelayApply = true;
+    tryApplyVideoDelay();
+  }
+
+  function tryApplyVideoDelay() {
+    if (!state.pendingVideoDelayApply) return;
+    var delay = state.streamDelaySec;
+    if (delay === 0) {
+      state.pendingVideoDelayApply = false;
+      bufferBanner.classList.add('hidden');
+      videoBufferWarn.classList.add('hidden');
+      return;
+    }
+
+    var end = getBufferedEnd(video);
+    var start = getBufferedStart(video);
+    if (end == null) {
+      bufferBanner.classList.remove('hidden');
+      return;
+    }
+
+    var need = delay;
+    var avail = availableDelaySeconds(video);
+    if (avail < need - 0.5) {
+      bufferBanner.classList.remove('hidden');
+      videoBufferWarn.textContent = 'Requested delay (' + need + 's) exceeds available buffer (~' + Math.floor(avail) + 's). Wait for more buffer or lower the delay.';
+      videoBufferWarn.classList.remove('hidden');
+      return;
+    }
+
+    bufferBanner.classList.add('hidden');
+    videoBufferWarn.classList.add('hidden');
+
+    var target = end - delay;
+    if (target < start) target = start;
+
+    var wasPlaying = !video.paused;
+    state.wasPlayingBeforeSeek = wasPlaying;
+    video.pause();
+    video.currentTime = target;
+    if (wasPlaying) {
+      var p = video.play();
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    }
+    state.pendingVideoDelayApply = false;
+  }
+
+  function setVideoPhase(phase) {
+    state.videoPhase = phase;
+    videoStatusDot.className = 'dot';
+    if (phase === 'connecting') {
+      videoStatusDot.classList.add('connecting');
+      videoStatusText.textContent = 'Connecting…';
+    } else if (phase === 'ready') {
+      videoStatusDot.classList.add('ready');
+      videoStatusText.textContent = 'Stream playing';
+    } else if (phase === 'error') {
+      videoStatusDot.classList.add('error');
+      videoStatusText.textContent = 'Stream error';
+    } else {
+      videoStatusText.textContent = 'No stream loaded';
+    }
+  }
+
+  function connectStream() {
+    var url = streamUrlInput.value.trim();
+    if (!url) return;
+    videoError.classList.add('hidden');
+    setVideoPhase('connecting');
+    video.removeAttribute('src');
+    video.load();
+    video.src = url;
+    savePrefs();
+    var p = video.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(function () {
+        setVideoPhase('error');
+        showStreamError();
+      });
+    }
+  }
+
+  function showStreamError() {
+    videoError.classList.remove('hidden');
+    setVideoPhase('error');
+  }
+
+  btnStreamConnect.addEventListener('click', connectStream);
+  btnStreamReconnect.addEventListener('click', connectStream);
+
+  video.addEventListener('loadstart', function () {
+    setVideoPhase('connecting');
+  });
+  video.addEventListener('loadedmetadata', function () {
+    setVideoPhase('ready');
+    scheduleVideoDelayApply();
+  });
+  video.addEventListener('canplay', function () {
+    tryApplyVideoDelay();
+  });
+  video.addEventListener('progress', function () {
+    tryApplyVideoDelay();
+  });
+  video.addEventListener('playing', function () {
+    setVideoPhase('ready');
+  });
+  video.addEventListener('error', function () {
+    showStreamError();
+  });
+  video.addEventListener('stalled', function () {});
+
+  function onStreamSliderInput(value) {
+    var sec = clamp(parseInt(value, 10) || 0, 0, 120);
+    var prev = state.streamDelaySec;
+    state.streamDelaySec = sec;
+    syncSlidersFromState();
+    savePrefs();
+    if (sec > prev) {
+      var wasPlaying = !video.paused;
+      video.pause();
+      state.pendingVideoDelayApply = true;
+      tryApplyVideoDelay();
+      if (wasPlaying) {
+        var p = video.play();
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      }
+    } else {
+      scheduleVideoDelayApply();
+    }
+  }
+
+  sliderStreamPane.addEventListener('input', function () {
+    onStreamSliderInput(sliderStreamPane.value);
+  });
+  sliderStreamBottom.addEventListener('input', function () {
+    onStreamSliderInput(sliderStreamBottom.value);
+  });
+
+  function onChatSliderInput(value) {
+    setChatDelay(parseInt(value, 10) || 0);
+  }
+  sliderChatPane.addEventListener('input', function () {
+    onChatSliderInput(sliderChatPane.value);
+  });
+  sliderChatBottom.addEventListener('input', function () {
+    onChatSliderInput(sliderChatBottom.value);
+  });
+
+  btnSyncBoth.addEventListener('click', function () {
+    setChatDelay(state.streamDelaySec);
+  });
+
+  document.querySelectorAll('[data-nudge]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var kind = btn.getAttribute('data-nudge');
+      var delta = parseInt(btn.getAttribute('data-delta'), 10) || 0;
+      if (kind === 'stream') {
+        setStreamDelay(state.streamDelaySec + delta, true);
+      } else if (kind === 'chat') {
+        setChatDelay(state.chatDelaySec + delta);
+      }
+    });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === '[') {
+      e.preventDefault();
+      setStreamDelay(state.streamDelaySec - 1, true);
+    } else if (e.key === ']') {
+      e.preventDefault();
+      setStreamDelay(state.streamDelaySec + 1, true);
+    } else if (e.key === '{') {
+      e.preventDefault();
+      setChatDelay(state.chatDelaySec - 1);
+    } else if (e.key === '}') {
+      e.preventDefault();
+      setChatDelay(state.chatDelaySec + 1);
+    }
+  });
+
+  /* ---------- Twitch IRC ---------- */
+  var IRC_URL = 'wss://irc-ws.chat.twitch.tv:443';
+
+  function randomJustinfanNick() {
+    var n = '';
+    for (var i = 0; i < 8; i++) n += String(Math.floor(Math.random() * 10));
+    return 'justinfan' + n;
+  }
+
+  function parseTags(tagStr) {
+    var tags = {};
+    if (!tagStr) return tags;
+    var parts = tagStr.split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var eq = parts[i].indexOf('=');
+      if (eq === -1) continue;
+      var k = parts[i].slice(0, eq);
+      var v = parts[i].slice(eq + 1);
+      tags[k] = v.replace(/\\s/g, ' ').replace(/\\:/g, ';').replace(/\\\\/g, '\\');
+    }
+    return tags;
+  }
+
+  function parseBadges(badgeStr) {
+    var badges = { sub: false, mod: false };
+    if (!badgeStr) return badges;
+    var pairs = badgeStr.split(',');
+    for (var i = 0; i < pairs.length; i++) {
+      var p = pairs[i].split('/');
+      if (p[0] === 'subscriber' || p[0] === 'founder') badges.sub = true;
+      if (p[0] === 'moderator') badges.mod = true;
+    }
+    return badges;
+  }
+
+  function parsePrivmsg(line) {
+    var tagPart = '';
+    var rest = line;
+    if (rest[0] === '@') {
+      var sp = rest.indexOf(' ');
+      if (sp === -1) return null;
+      tagPart = rest.slice(1, sp);
+      rest = rest.slice(sp + 1);
+    }
+    var tags = parseTags(tagPart);
+    var priv = ' PRIVMSG ';
+    var pi = rest.indexOf(priv);
+    if (pi === -1) return null;
+    var prefix = rest.slice(0, pi);
+    var after = rest.slice(pi + priv.length);
+    var chEnd = after.indexOf(' ');
+    if (chEnd === -1) return null;
+    var channel = after.slice(0, chEnd).replace(/^#/, '').toLowerCase();
+    var text = after.slice(chEnd + 1);
+    if (text[0] === ':') text = text.slice(1);
+    var nick = '';
+    var ex = prefix.indexOf('!');
+    if (ex !== -1) nick = prefix.slice(0, ex);
+    else nick = prefix;
+    var displayName = tags['display-name'] || nick || 'user';
+    var color = tags.color || '';
+    var badgeStr = tags.badges || '';
+    return {
+      channel: channel,
+      username: displayName,
+      color: color,
+      text: text,
+      badges: parseBadges(badgeStr)
+    };
+  }
+
+  function setChatPhase(phase, detail) {
+    state.chatPhase = phase;
+    chatStatusDot.className = 'dot';
+    if (phase === 'connecting') {
+      chatStatusDot.classList.add('connecting');
+      chatStatusText.textContent = detail || 'Connecting…';
+    } else if (phase === 'connected') {
+      chatStatusDot.classList.add('ready');
+      chatStatusText.textContent = 'Chat connected';
+    } else if (phase === 'reconnecting') {
+      chatStatusDot.classList.add('connecting');
+      chatStatusText.textContent = detail || 'Chat disconnected — retrying…';
+    } else {
+      chatStatusText.textContent = detail || 'Chat disconnected';
+    }
+  }
+
+  function clearReconnectTimer() {
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  }
+
+  function scheduleReconnect() {
+    if (!state.wantChat || !state.chatChannel) return;
+    clearReconnectTimer();
+    var attempt = state.reconnectAttempt++;
+    var base = Math.min(30000, 1000 * Math.pow(2, attempt));
+    var jitter = Math.random() * 800;
+    var delay = base + jitter;
+    setChatPhase('reconnecting', 'Chat disconnected — retrying…');
+    state.reconnectTimer = setTimeout(function () {
+      if (state.wantChat && state.chatChannel) openChatSocket();
+    }, delay);
+  }
+
+  function openChatSocket() {
+    clearReconnectTimer();
+    var raw = channelInput.value.trim().replace(/^#/, '').toLowerCase();
+    if (!raw || !/^[a-z0-9_]{3,25}$/.test(raw)) {
+      state.wantChat = false;
+      setChatPhase('disconnected', 'Enter a valid channel name (letters, numbers, underscore)');
+      return;
+    }
+    state.chatChannel = raw;
+    savePrefs();
+
+    if (state.ws) {
+      var old = state.ws;
+      state.ws = null;
+      try {
+        old.onopen = old.onclose = old.onerror = old.onmessage = null;
+        old.close();
+      } catch (e) {}
+    }
+
+    setChatPhase('connecting');
+    var ws = new WebSocket(IRC_URL);
+    state.ws = ws;
+    var nick = randomJustinfanNick();
+    var gotServerActivity = false;
+
+    ws.onopen = function () {
+      state.reconnectAttempt = 0;
+      ws.send('PASS SCHMOOPIIE');
+      ws.send('NICK ' + nick);
+      ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+      ws.send('JOIN #' + state.chatChannel);
+    };
+
+    ws.onmessage = function (ev) {
+      if (!gotServerActivity && state.ws === ws) {
+        gotServerActivity = true;
+        setChatPhase('connected');
+      }
+      var lines = String(ev.data).split(/\r?\n/);
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line) continue;
+        if (line.indexOf('PING') === 0) {
+          var tok = line.split(' ');
+          ws.send('PONG ' + (tok[1] || ''));
+          continue;
+        }
+        if (line.indexOf('PRIVMSG') !== -1) {
+          var msg = parsePrivmsg(line);
+          if (msg && msg.channel === state.chatChannel) {
+            if (chatPlaceholder.parentNode) chatPlaceholder.remove();
+            state.chatQueue.push({
+              timestamp: Date.now(),
+              username: msg.username,
+              color: sanitizeTwitchColor(msg.color),
+              text: msg.text,
+              badges: msg.badges
+            });
+          }
+        }
+      }
+    };
+
+    ws.onerror = function () {};
+
+    ws.onclose = function () {
+      if (state.ws === ws) state.ws = null;
+      if (state.wantChat && state.chatChannel) {
+        scheduleReconnect();
+      } else {
+        setChatPhase('disconnected');
+      }
+    };
+  }
+
+  function disconnectChat() {
+    state.wantChat = false;
+    clearReconnectTimer();
+    state.reconnectAttempt = 0;
+    if (state.ws) {
+      var w = state.ws;
+      state.ws = null;
+      try {
+        w.onopen = w.onclose = w.onerror = w.onmessage = null;
+        w.close();
+      } catch (e) {}
+    }
+    setChatPhase('disconnected');
+  }
+
+  btnChatConnect.addEventListener('click', function () {
+    disconnectChat();
+    state.chatQueue = [];
+    chatMessages.innerHTML = '';
+    chatMessages.appendChild(chatPlaceholder);
+    chatPlaceholder.textContent = 'Waiting for messages…';
+    state.wantChat = true;
+    openChatSocket();
+  });
+
+  function defaultUserColor(name) {
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return 'hsl(' + h + ', 70%, 65%)';
+  }
+
+  /** Twitch sends #RRGGBB; only allow hex for inline styles */
+  function sanitizeTwitchColor(c) {
+    if (!c) return '';
+    if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+    return '';
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderChatTick() {
+    var delayMs = state.chatDelaySec * 1000;
+    var now = Date.now();
+    var frag = document.createDocumentFragment();
+    var remaining = [];
+    for (var i = 0; i < state.chatQueue.length; i++) {
+      var m = state.chatQueue[i];
+      if (now - m.timestamp >= delayMs) {
+        var row = document.createElement('div');
+        row.className = 'msg';
+        var nameColor = m.color ? m.color : defaultUserColor(m.username);
+        var badgeHtml = '';
+        if (m.badges.sub) badgeHtml += '<span class="badge-dot sub" title="Subscriber"></span>';
+        if (m.badges.mod) badgeHtml += '<span class="badge-dot mod" title="Moderator"></span>';
+        row.innerHTML =
+          '<span class="badges">' + badgeHtml + '</span>' +
+          '<span class="name" style="color:' + escapeHtml(nameColor) + '">' + escapeHtml(m.username) + '</span>' +
+          '<span class="text">' + escapeHtml(m.text) + '</span>';
+        frag.appendChild(row);
+      } else {
+        remaining.push(m);
+      }
+    }
+    state.chatQueue = remaining;
+    if (frag.childNodes.length) {
+      chatMessages.appendChild(frag);
+      var kids = chatMessages.querySelectorAll('.msg');
+      while (kids.length > 200) {
+        chatMessages.removeChild(kids[0]);
+      }
+      if (!state.chatUserScrolledUp) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+  }
+
+  chatMessages.addEventListener('scroll', function () {
+    var el = chatMessages;
+    var nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    state.chatUserScrolledUp = !nearBottom;
+  });
+
+  setInterval(renderChatTick, 250);
+
+  loadPrefs();
+
+  /* First connect optional: user clicks Connect */
+})();
+  </script>
+</body>
+</html>

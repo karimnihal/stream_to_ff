@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+
+# Optional local env / secrets (if you add tooling later)
+.env
+.env.*
+!.env.example
+
+# Optional Node (if you add a toolchain later)
+node_modules/

@@ -1,7 +1,9 @@
+*.txt
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
+__pycache__/
 
 # Windows
 Thumbs.db

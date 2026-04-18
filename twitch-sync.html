@@ -334,6 +334,12 @@
       background: rgba(233, 25, 22, 0.12);
     }
     .video-error p { margin: 0 0 8px; }
+    .video-error .error-detail {
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-word;
+    }
     .hidden { display: none !important; }
     kbd {
       font-family: ui-monospace, monospace;
@@ -362,6 +368,7 @@
       </div>
       <div id="videoError" class="video-error hidden" role="alert">
         <p><strong>Stream not found.</strong> Make sure Streamlink + <code>python3 serve.py</code> are running.</p>
+        <p id="videoErrorDetail" class="error-detail hidden" aria-live="polite"></p>
         <button type="button" class="btn btn-ghost" id="btnStreamReconnect">Reconnect</button>
       </div>
       <div id="bufferBanner" class="buffer-banner hidden">Waiting for enough buffer to apply stream delay…</div>
@@ -408,11 +415,12 @@
 
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js" defer></script>
   <script>
 (function () {
   'use strict';
 
-  var STREAM_URL = '/stream';
+  var STREAM_URL = '/stream/playlist.m3u8';
 
   var LS = {
     channel: 'twitchSync.channel',
@@ -424,6 +432,7 @@
   var btnStreamConnect = document.getElementById('btnStreamConnect');
   var btnStreamReconnect = document.getElementById('btnStreamReconnect');
   var videoError = document.getElementById('videoError');
+  var videoErrorDetail = document.getElementById('videoErrorDetail');
   var bufferBanner = document.getElementById('bufferBanner');
   var videoBufferWarn = document.getElementById('videoBufferWarn');
   var videoStatusDot = document.getElementById('videoStatusDot');
@@ -444,6 +453,12 @@
   var sliderChatPane = document.getElementById('sliderChatPane');
   var chatInputPane = document.getElementById('chatInputPane');
   var btnSyncBoth = document.getElementById('btnSyncBoth');
+
+  /** Increment on each Connect to ignore stale async callbacks (iOS Safari). */
+  var streamConnectGen = 0;
+  var streamReadyTimer = null;
+  var hlsInstance = null;
+  var hlsLibReadyPromise = null;
 
   var state = {
     streamDelaySec: 0,
@@ -639,24 +654,175 @@
     }
   }
 
-  function connectStream() {
-    videoError.classList.add('hidden');
-    setVideoPhase('connecting');
-    video.removeAttribute('src');
-    video.load();
-    video.src = STREAM_URL;
-    var p = video.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(function () {
-        setVideoPhase('error');
-        showStreamError();
-      });
+  function clearStreamReadyTimer() {
+    if (streamReadyTimer) {
+      clearTimeout(streamReadyTimer);
+      streamReadyTimer = null;
     }
   }
 
-  function showStreamError() {
+  function videoHasDecoderError() {
+    return !!(video.error && video.error.code);
+  }
+
+  function setVideoErrorDetail(text) {
+    if (!videoErrorDetail) return;
+    if (!text) {
+      videoErrorDetail.textContent = '';
+      videoErrorDetail.classList.add('hidden');
+    } else {
+      videoErrorDetail.textContent = text;
+      videoErrorDetail.classList.remove('hidden');
+    }
+  }
+
+  function showStreamError(detail) {
     videoError.classList.remove('hidden');
     setVideoPhase('error');
+    if (detail) {
+      setVideoErrorDetail(detail);
+    } else if (videoHasDecoderError()) {
+      var er = video.error;
+      setVideoErrorDetail('Media error ' + er.code + (er.message ? ': ' + er.message : ''));
+    } else {
+      setVideoErrorDetail('');
+    }
+  }
+
+  function tryPlayStream(gen, attempt) {
+    if (gen !== streamConnectGen) return;
+    attempt = attempt || 0;
+    var p = video.play();
+    if (!p || typeof p.catch !== 'function') return;
+    p.catch(function () {
+      if (gen !== streamConnectGen) return;
+      if (videoHasDecoderError()) {
+        setVideoPhase('error');
+        showStreamError();
+        return;
+      }
+      if (attempt < 4) {
+        setTimeout(function () {
+          tryPlayStream(gen, attempt + 1);
+        }, 120 * (attempt + 1));
+        return;
+      }
+      setVideoPhase('error');
+      showStreamError(
+        'Playback did not start automatically. Use the video play control, or tap Reconnect.'
+      );
+    });
+  }
+
+  function schedulePlayWhenMediaReady(gen) {
+    clearStreamReadyTimer();
+    var fired = false;
+    function onReady() {
+      if (fired || gen !== streamConnectGen) return;
+      fired = true;
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('canplay', onReady);
+      clearStreamReadyTimer();
+      tryPlayStream(gen, 0);
+    }
+    video.addEventListener('loadeddata', onReady);
+    video.addEventListener('canplay', onReady);
+    streamReadyTimer = setTimeout(function () {
+      if (gen !== streamConnectGen) return;
+      if (!fired) {
+        fired = true;
+        video.removeEventListener('loadeddata', onReady);
+        video.removeEventListener('canplay', onReady);
+        if (videoHasDecoderError()) {
+          setVideoPhase('error');
+          showStreamError();
+        } else if (video.readyState >= 2) {
+          tryPlayStream(gen, 0);
+        } else {
+          setVideoPhase('error');
+          showStreamError(
+            'No video data received in time. Check Streamlink on the Mac and that port 8765 is reachable.'
+          );
+        }
+      }
+    }, 35000);
+  }
+
+  function destroyHls() {
+    if (hlsInstance) {
+      try { hlsInstance.destroy(); } catch (e) {}
+      hlsInstance = null;
+    }
+  }
+
+  function nativeHlsSupported() {
+    return !!video.canPlayType && (
+      video.canPlayType('application/vnd.apple.mpegurl') !== '' ||
+      video.canPlayType('application/x-mpegURL') !== ''
+    );
+  }
+
+  function waitForHlsLib() {
+    if (typeof window.Hls !== 'undefined') return Promise.resolve(window.Hls);
+    if (hlsLibReadyPromise) return hlsLibReadyPromise;
+    hlsLibReadyPromise = new Promise(function (resolve, reject) {
+      var deadline = Date.now() + 10000;
+      (function poll() {
+        if (typeof window.Hls !== 'undefined') return resolve(window.Hls);
+        if (Date.now() > deadline) return reject(new Error('hls.js failed to load'));
+        setTimeout(poll, 100);
+      })();
+    });
+    return hlsLibReadyPromise;
+  }
+
+  function attachHlsJs(gen) {
+    waitForHlsLib().then(function (Hls) {
+      if (gen !== streamConnectGen) return;
+      if (!Hls.isSupported()) {
+        setVideoPhase('error');
+        showStreamError('This browser cannot play HLS (no MSE / hls.js).');
+        return;
+      }
+      destroyHls();
+      var hls = new Hls({
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
+        enableWorker: true,
+        lowLatencyMode: false
+      });
+      hlsInstance = hls;
+      hls.on(Hls.Events.ERROR, function (_e, data) {
+        if (gen !== streamConnectGen) return;
+        if (!data || !data.fatal) return;
+        setVideoPhase('error');
+        showStreamError('HLS error: ' + (data.details || data.type || 'fatal'));
+      });
+      hls.loadSource(STREAM_URL);
+      hls.attachMedia(video);
+    }).catch(function (err) {
+      if (gen !== streamConnectGen) return;
+      setVideoPhase('error');
+      showStreamError(err && err.message ? err.message : 'Could not load hls.js');
+    });
+  }
+
+  function connectStream() {
+    streamConnectGen += 1;
+    var gen = streamConnectGen;
+    clearStreamReadyTimer();
+    destroyHls();
+    videoError.classList.add('hidden');
+    setVideoErrorDetail('');
+    setVideoPhase('connecting');
+    video.removeAttribute('src');
+    video.load();
+    if (nativeHlsSupported()) {
+      video.src = STREAM_URL;
+    } else {
+      attachHlsJs(gen);
+    }
+    schedulePlayWhenMediaReady(gen);
   }
 
   btnStreamConnect.addEventListener('click', connectStream);

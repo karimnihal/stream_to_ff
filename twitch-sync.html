@@ -459,6 +459,9 @@
   var streamReadyTimer = null;
   var hlsInstance = null;
   var hlsLibReadyPromise = null;
+  var HLS_MAX_LATENCY_SEC = 125;
+  var delayApplyDebounceTimer = null;
+  var nativeDriftCooldownUntil = 0;
 
   var state = {
     streamDelaySec: 0,
@@ -472,7 +475,7 @@
     chatChannel: '',
     wantChat: false,
     pendingVideoDelayApply: false,
-    wasPlayingBeforeSeek: false
+    delayHoldLocked: false
   };
 
   function loadPrefs() {
@@ -557,7 +560,9 @@
     state.streamDelaySec = normalizeDelayTyped(sec);
     syncSlidersFromState();
     savePrefs();
+    applyHlsDelayConfig();
     if (applySeek !== false) scheduleVideoDelayApply();
+    else if (state.streamDelaySec < 1e-9) resetDelayHold();
   }
 
   function setChatDelay(sec) {
@@ -566,42 +571,121 @@
     savePrefs();
   }
 
+  /** Buffered range that contains the playhead (avoids wrong live edge with gap-filled HLS). */
+  function bufferedRangeAtPlayhead(v) {
+    if (!v.buffered || !v.buffered.length) return null;
+    var t = v.currentTime;
+    for (var i = v.buffered.length - 1; i >= 0; i--) {
+      if (t >= v.buffered.start(i) - 0.05 && t <= v.buffered.end(i) + 0.05) {
+        return { start: v.buffered.start(i), end: v.buffered.end(i) };
+      }
+    }
+    var last = v.buffered.length - 1;
+    return { start: v.buffered.start(last), end: v.buffered.end(last) };
+  }
+
   function getBufferedEnd(v) {
+    var r = bufferedRangeAtPlayhead(v);
+    return r ? r.end : null;
+  }
+
+  function getBufferedStart(v) {
+    var r = bufferedRangeAtPlayhead(v);
+    return r ? r.start : null;
+  }
+
+  /** Furthest buffered time (true live edge for delay targeting). */
+  function getLiveBufferedEnd(v) {
     if (!v.buffered || !v.buffered.length) return null;
     return v.buffered.end(v.buffered.length - 1);
   }
 
-  function getBufferedStart(v) {
-    if (!v.buffered || !v.buffered.length) return null;
-    return v.buffered.start(0);
-  }
-
   /** Max seconds of media behind the live edge we can seek to (approx). */
   function availableDelaySeconds(v) {
-    var end = getBufferedEnd(v);
-    var start = getBufferedStart(v);
-    if (end == null || start == null) return 0;
-    return Math.max(0, end - start - 0.25);
+    var liveEnd = getLiveBufferedEnd(v);
+    var start = v.buffered && v.buffered.length ? v.buffered.start(0) : null;
+    if (liveEnd == null || start == null) return 0;
+    return Math.max(0, liveEnd - start - 0.25);
+  }
+
+  /** Seconds behind the live buffered edge (0 if unknown). */
+  function actualDelaySeconds(v) {
+    var liveEnd = getLiveBufferedEnd(v);
+    if (liveEnd == null || isNaN(v.currentTime)) return null;
+    return Math.max(0, liveEnd - v.currentTime);
+  }
+
+  function hlsConfigForDelay(delaySec) {
+    var delay = Math.max(0, delaySec);
+    var cfg = {
+      maxLiveSyncPlaybackRate: 1,
+      enableWorker: true,
+      lowLatencyMode: false
+    };
+    if (delay > 0) {
+      cfg.liveSyncDuration = delay;
+      cfg.liveMaxLatencyDuration = HLS_MAX_LATENCY_SEC;
+    } else {
+      cfg.liveSyncDurationCount = 3;
+      cfg.liveMaxLatencyDurationCount = 10;
+    }
+    return cfg;
+  }
+
+  function applyHlsDelayConfig() {
+    if (!hlsInstance) return;
+    Object.assign(hlsInstance.config, hlsConfigForDelay(state.streamDelaySec));
+  }
+
+  function resetDelayHold() {
+    state.delayHoldLocked = false;
+    state.pendingVideoDelayApply = false;
+    nativeDriftCooldownUntil = 0;
+    if (delayApplyDebounceTimer) {
+      clearTimeout(delayApplyDebounceTimer);
+      delayApplyDebounceTimer = null;
+    }
   }
 
   function scheduleVideoDelayApply() {
     state.pendingVideoDelayApply = true;
-    tryApplyVideoDelay();
+    state.delayHoldLocked = false;
+    debouncedTryApplyVideoDelay();
+  }
+
+  function debouncedTryApplyVideoDelay() {
+    if (delayApplyDebounceTimer) clearTimeout(delayApplyDebounceTimer);
+    delayApplyDebounceTimer = setTimeout(function () {
+      delayApplyDebounceTimer = null;
+      tryApplyVideoDelay();
+    }, 200);
+  }
+
+  function seekToStreamDelay() {
+    var delay = state.streamDelaySec;
+    var liveEnd = getLiveBufferedEnd(video);
+    var start = video.buffered && video.buffered.length ? video.buffered.start(0) : 0;
+    if (liveEnd == null || delay < 1e-9) return false;
+    var target = liveEnd - delay;
+    if (target < start) target = start;
+    if (Math.abs(video.currentTime - target) < 0.35) return true;
+    video.currentTime = target;
+    return true;
   }
 
   function tryApplyVideoDelay() {
-    if (!state.pendingVideoDelayApply) return;
+    if (state.delayHoldLocked && !state.pendingVideoDelayApply) return;
+
     var delay = state.streamDelaySec;
     if (delay < 1e-9) {
       state.pendingVideoDelayApply = false;
+      state.delayHoldLocked = false;
       bufferBanner.classList.add('hidden');
       videoBufferWarn.classList.add('hidden');
       return;
     }
 
-    var end = getBufferedEnd(video);
-    var start = getBufferedStart(video);
-    if (end == null) {
+    if (getLiveBufferedEnd(video) == null) {
       bufferBanner.classList.remove('hidden');
       return;
     }
@@ -623,18 +707,31 @@
     bufferBanner.classList.add('hidden');
     videoBufferWarn.classList.add('hidden');
 
-    var target = end - delay;
-    if (target < start) target = start;
-
-    var wasPlaying = !video.paused;
-    state.wasPlayingBeforeSeek = wasPlaying;
-    video.pause();
-    video.currentTime = target;
-    if (wasPlaying) {
-      var p = video.play();
-      if (p && typeof p.catch === 'function') p.catch(function () {});
+    var actual = actualDelaySeconds(video);
+    if (state.delayHoldLocked && actual != null && Math.abs(actual - delay) < 2) {
+      state.pendingVideoDelayApply = false;
+      return;
     }
+
+    if (!seekToStreamDelay()) return;
+
     state.pendingVideoDelayApply = false;
+    state.delayHoldLocked = true;
+    applyHlsDelayConfig();
+  }
+
+  /** Safari native HLS only: rare correction if the playhead drifts to live. */
+  function maybeCorrectNativeDrift() {
+    if (hlsInstance || state.streamDelaySec < 1e-9 || !state.delayHoldLocked) return;
+    if (Date.now() < nativeDriftCooldownUntil) return;
+    if (video.readyState < 2 || video.paused) return;
+
+    var desired = state.streamDelaySec;
+    var actual = actualDelaySeconds(video);
+    if (actual == null || actual + 3 > desired) return;
+    if (availableDelaySeconds(video) + 1e-6 < desired) return;
+
+    if (seekToStreamDelay()) nativeDriftCooldownUntil = Date.now() + 8000;
   }
 
   function setVideoPhase(phase) {
@@ -785,12 +882,7 @@
         return;
       }
       destroyHls();
-      var hls = new Hls({
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
-        enableWorker: true,
-        lowLatencyMode: false
-      });
+      var hls = new Hls(hlsConfigForDelay(state.streamDelaySec));
       hlsInstance = hls;
       hls.on(Hls.Events.ERROR, function (_e, data) {
         if (gen !== streamConnectGen) return;
@@ -811,6 +903,7 @@
     streamConnectGen += 1;
     var gen = streamConnectGen;
     clearStreamReadyTimer();
+    resetDelayHold();
     destroyHls();
     videoError.classList.add('hidden');
     setVideoErrorDetail('');
@@ -833,60 +926,26 @@
   });
   video.addEventListener('loadedmetadata', function () {
     setVideoPhase('ready');
-    scheduleVideoDelayApply();
-  });
-  video.addEventListener('canplay', function () {
-    tryApplyVideoDelay();
+    if (state.streamDelaySec >= 1e-9) scheduleVideoDelayApply();
   });
   video.addEventListener('progress', function () {
-    tryApplyVideoDelay();
+    if (state.pendingVideoDelayApply) debouncedTryApplyVideoDelay();
   });
   video.addEventListener('playing', function () {
     setVideoPhase('ready');
   });
+  video.addEventListener('timeupdate', maybeCorrectNativeDrift);
   video.addEventListener('error', function () {
     showStreamError();
   });
   video.addEventListener('stalled', function () {});
 
   function onStreamSliderInput(value) {
-    var sec = normalizeDelaySlider(value);
-    var prev = state.streamDelaySec;
-    state.streamDelaySec = sec;
-    syncSlidersFromState();
-    savePrefs();
-    if (sec > prev + 1e-9) {
-      var wasPlaying = !video.paused;
-      video.pause();
-      state.pendingVideoDelayApply = true;
-      tryApplyVideoDelay();
-      if (wasPlaying) {
-        var p = video.play();
-        if (p && typeof p.catch === 'function') p.catch(function () {});
-      }
-    } else {
-      scheduleVideoDelayApply();
-    }
+    setStreamDelay(normalizeDelaySlider(value), true);
   }
 
   function commitStreamDelayFromInput(el) {
-    var v = normalizeDelayTyped(el.value);
-    var prev = state.streamDelaySec;
-    state.streamDelaySec = v;
-    syncSlidersFromState();
-    savePrefs();
-    if (v > prev + 1e-9) {
-      var wasPlaying = !video.paused;
-      video.pause();
-      state.pendingVideoDelayApply = true;
-      tryApplyVideoDelay();
-      if (wasPlaying) {
-        var p = video.play();
-        if (p && typeof p.catch === 'function') p.catch(function () {});
-      }
-    } else {
-      scheduleVideoDelayApply();
-    }
+    setStreamDelay(normalizeDelayTyped(el.value), true);
   }
 
   sliderStreamPane.addEventListener('input', function () {
